@@ -39,17 +39,23 @@ void LoadIMU(const string &strImuPath, vector<double> &vTimeStamps, vector<cv::P
 double ttrack_tot = 0;
 int main(int argc, char *argv[])
 {
-
+    // argv[0]: ./mono_inertial_euroc
+    // argv[1]: 磁带文件路径
+    // argv[2]: 配置文件路径
+    // argv[3]: path_to_sequence_folder_1
+    // argv[4]: path_to_times_file_1
+    // argv[5]: path_to_image_folder_2 
+    // argv[i]: path_to_times_file_2 ... path_to_image_folder_N path_to_times_file_N
     if(argc < 5)
     {
         cerr << endl << "Usage: ./mono_inertial_euroc path_to_vocabulary path_to_settings path_to_sequence_folder_1 path_to_times_file_1 (path_to_image_folder_2 path_to_times_file_2 ... path_to_image_folder_N path_to_times_file_N) " << endl;
         return 1;
     }
 
-    const int num_seq = (argc-3)/2;
+    const int num_seq = (argc-3)/2; // 减去前3个参数，剩下的除以2，得到数据组数
     cout << "num_seq = " << num_seq << endl;
-    bool bFileName= (((argc-3) % 2) == 1);
-    string file_name;
+    bool bFileName= (((argc-3) % 2) == 1); // 最后一个参数是否为 path_to_image_folder
+    string file_name; // 并没有用
     if (bFileName)
     {
         file_name = string(argv[argc-1]);
@@ -58,13 +64,13 @@ int main(int argc, char *argv[])
 
     // Load all sequences:
     int seq;
-    vector< vector<string> > vstrImageFilenames;
-    vector< vector<double> > vTimestampsCam;
-    vector< vector<cv::Point3f> > vAcc, vGyro;
-    vector< vector<double> > vTimestampsImu;
-    vector<int> nImages;
-    vector<int> nImu;
-    vector<int> first_imu(num_seq,0);
+    vector< vector<string> > vstrImageFilenames;    // 图像文件名
+    vector< vector<double> > vTimestampsCam;        // 相机时间戳
+    vector< vector<cv::Point3f> > vAcc, vGyro;      // 线加速度，角速度
+    vector< vector<double> > vTimestampsImu;        // imu时间戳
+    vector<int> nImages;                            // 图像数量
+    vector<int> nImu;                               // imu数量
+    vector<int> first_imu(num_seq,0);               // 与图像时间戳对齐后，作为第一帧imu的序号
 
     vstrImageFilenames.resize(num_seq);
     vTimestampsCam.resize(num_seq);
@@ -75,14 +81,14 @@ int main(int argc, char *argv[])
     nImu.resize(num_seq);
 
     int tot_images = 0;
-    for (seq = 0; seq<num_seq; seq++)
+    for (seq = 0; seq<num_seq; seq++) // 遍历每一组数据
     {
         cout << "Loading images for sequence " << seq << "...";
 
         string pathSeq(argv[(2*seq) + 3]);
         string pathTimeStamps(argv[(2*seq) + 4]);
 
-        string pathCam0 = pathSeq + "/mav0/cam0/data";
+        string pathCam0 = pathSeq + "/mav0/cam0/data";   // 组合数据路径
         string pathImu = pathSeq + "/mav0/imu0/data.csv";
 
         LoadImages(pathCam0, pathTimeStamps, vstrImageFilenames[seq], vTimestampsCam[seq]);
@@ -103,7 +109,7 @@ int main(int argc, char *argv[])
         }
 
         // Find first imu to be considered, supposing imu measurements start first
-
+        // imu按照图像时间戳对齐
         while(vTimestampsImu[seq][first_imu[seq]]<=vTimestampsCam[seq][0])
             first_imu[seq]++;
         first_imu[seq]--; // first imu measurement to be considered
@@ -117,8 +123,9 @@ int main(int argc, char *argv[])
     cout.precision(17);
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
+    // 启动SLAM系统，准备接受数据
     ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::IMU_MONOCULAR, true);
-    float imageScale = SLAM.GetImageScale();
+    float imageScale = SLAM.GetImageScale(); // Track类规定了缩放尺度
 
     double t_resize = 0.f;
     double t_track = 0.f;
@@ -174,7 +181,7 @@ int main(int argc, char *argv[])
             if(ni>0)
             {
                 // cout << "t_cam " << tframe << endl;
-
+                // 两帧图像之间的imu都压倒vImuMeas里
                 while(vTimestampsImu[seq][first_imu[seq]]<=vTimestampsCam[seq][ni])
                 {
                     vImuMeas.push_back(ORB_SLAM3::IMU::Point(vAcc[seq][first_imu[seq]].x,vAcc[seq][first_imu[seq]].y,vAcc[seq][first_imu[seq]].z,
@@ -192,6 +199,7 @@ int main(int argc, char *argv[])
 
             // Pass the image to the SLAM system
             // cout << "tframe = " << tframe << endl;
+            // 跟踪一帧
             SLAM.TrackMonocular(im,tframe,vImuMeas); // TODO change to monocular_inertial
 
     #ifdef COMPILEDWITHC11
@@ -224,12 +232,13 @@ int main(int argc, char *argv[])
         if(seq < num_seq - 1)
         {
             cout << "Changing the dataset" << endl;
-
+            // 改变数据集？？？
             SLAM.ChangeDataset();
         }
     }
 
     // Stop all threads
+    // 关闭所有线程
     SLAM.Shutdown();
 
     // Save camera trajectory
