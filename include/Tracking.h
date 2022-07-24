@@ -135,6 +135,7 @@ public:
     int mSensor;
 
     // Current Frame
+    // 当前帧与前一帧
     Frame mCurrentFrame;
     Frame mLastFrame;
 

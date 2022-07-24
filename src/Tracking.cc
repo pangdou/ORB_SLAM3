@@ -1794,7 +1794,7 @@ void Tracking::ResetFrameIMU()
 void Tracking::Track()
 {
 
-    if (bStepByStep)
+    if (bStepByStep) // 两帧之间间隔500ms，方便调试
     {
         std::cout << "Tracking: Waiting to the next step" << std::endl;
         while(!mbStep && bStepByStep)
@@ -1802,23 +1802,23 @@ void Tracking::Track()
         mbStep = false;
     }
 
-    if(mpLocalMapper->mbBadImu)
+    if(mpLocalMapper->mbBadImu) // local mapper里IMU被标记为坏的，跳过当前帧
     {
         cout << "TRACK: Reset map because local mapper set the bad imu flag " << endl;
-        mpSystem->ResetActiveMap();
+        mpSystem->ResetActiveMap(); // TODO: 确认这里调用System还是Tracking的ResetActiveMap()？两者的区别？
         return;
     }
 
-    Map* pCurrentMap = mpAtlas->GetCurrentMap();
-    if(!pCurrentMap)
+    Map* pCurrentMap = mpAtlas->GetCurrentMap(); // 从Atlas中获取当前地图
+    if(!pCurrentMap) // 没有活动的地图也没有跳过当前帧
     {
         cout << "ERROR: There is not an active map in the atlas" << endl;
     }
 
-    if(mState!=NO_IMAGES_YET)
+    if(mState!=NO_IMAGES_YET) // 只要是有图，就...
     {
         if(mLastFrame.mTimeStamp>mCurrentFrame.mTimeStamp)
-        {
+        { // 如果前一帧的时间戳大于当前帧时间戳，异常，清掉当前帧IMU数据，并在Atlas中建新地图并跳过当前帧
             cerr << "ERROR: Frame with a timestamp older than previous frame detected!" << endl;
             unique_lock<mutex> lock(mMutexImuQueue);
             mlQueueImuData.clear();
@@ -1826,36 +1826,35 @@ void Tracking::Track()
             return;
         }
         else if(mCurrentFrame.mTimeStamp>mLastFrame.mTimeStamp+1.0)
-        {
+        { // 如果当前帧时间戳>前一帧时间戳+1
             // cout << mCurrentFrame.mTimeStamp << ", " << mLastFrame.mTimeStamp << endl;
             // cout << "id last: " << mLastFrame.mnId << "    id curr: " << mCurrentFrame.mnId << endl;
             if(mpAtlas->isInertial())
-            {
-
+            { // Atlas是惯性的，可以和外面的if写在一起
                 if(mpAtlas->isImuInitialized())
-                {
+                { // IMU已初始化，认为跟踪已丢失
                     cout << "Timestamp jump detected. State set to LOST. Reseting IMU integration..." << endl;
                     if(!pCurrentMap->GetIniertialBA2())
-                    {
+                    { // ？，重置活动地图
                         mpSystem->ResetActiveMap();
                     }
                     else
-                    {
+                    { // 建子地图
                         CreateMapInAtlas();
                     }
                 }
                 else
-                {
+                { // IMU还没有初始化，直接重置活动地图
                     cout << "Timestamp jump detected, before IMU initialization. Reseting..." << endl;
                     mpSystem->ResetActiveMap();
                 }
                 return;
             }
 
-        }
+        } // TODO：当前帧时间戳等于前一帧时间戳到等于前一帧时间戳的这些情况没有考虑
     }
 
-
+    // 有IMU，需要设置bias
     if ((mSensor == System::IMU_MONOCULAR || mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD) && mpLastKeyFrame)
         mCurrentFrame.SetNewBias(mpLastKeyFrame->GetImuBias());
 
